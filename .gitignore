@@ -1,0 +1,7 @@
+node_modules/
+cw-data/
+cw-uploads/
+circuit-wars/
+cloudflared
+*.log
+.DS_Store
