@@ -38,16 +38,21 @@
       0%,100% { transform:translateY(0px); }
       50%     { transform:translateY(-8px); }
     }
-    .dot   { width:10px;height:10px;border-radius:50%;background:#a78bfa;display:inline-block;margin:0 3px; }
-    .d1    { animation:bounce-dot 1.2s ease-in-out 0.0s infinite; }
-    .d2    { animation:bounce-dot 1.2s ease-in-out 0.2s infinite; }
-    .d3    { animation:bounce-dot 1.2s ease-in-out 0.4s infinite; }
-    .blink { animation:pulse-timer 0.65s ease-in-out infinite; }
-    .fade  { animation:fade-in 0.35s ease; }
-    .shake { animation:shake 1.2s ease-in-out infinite; }
-    .pop   { animation:pop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
-    .float { animation:float 2s ease-in-out infinite; }
-    *      { -webkit-tap-highlight-color:transparent; }
+    @keyframes slide-in {
+      from { opacity:0; transform:translateX(-12px); }
+      to   { opacity:1; transform:translateX(0); }
+    }
+    .dot      { width:10px;height:10px;border-radius:50%;background:#a78bfa;display:inline-block;margin:0 3px; }
+    .d1       { animation:bounce-dot 1.2s ease-in-out 0.0s infinite; }
+    .d2       { animation:bounce-dot 1.2s ease-in-out 0.2s infinite; }
+    .d3       { animation:bounce-dot 1.2s ease-in-out 0.4s infinite; }
+    .blink    { animation:pulse-timer 0.65s ease-in-out infinite; }
+    .fade     { animation:fade-in 0.35s ease; }
+    .shake    { animation:shake 1.2s ease-in-out infinite; }
+    .pop      { animation:pop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+    .float    { animation:float 2s ease-in-out infinite; }
+    .slide-in { animation:slide-in 0.3s ease; }
+    *         { -webkit-tap-highlight-color:transparent; }
   </style>
 </head>
 <body class="bg-gray-900">
@@ -57,60 +62,63 @@
 const { useState, useEffect, useRef } = React;
 
 function App() {
-  // ── state ─────────────────────────────────────────────────────────────────
-  const [phase,      setPhase     ] = useState('home');   // home|lobby|playing|result|error
-  const [nameInput,  setNameInput ] = useState('');
-  const [myLabel,    setMyLabel   ] = useState('');
-  const [lobbyCount, setLobbyCount] = useState(0);
+  const [phase,        setPhase       ] = useState('home');
+  const [nameInput,    setNameInput   ] = useState('');
+  const [myLabel,      setMyLabel     ] = useState('');
+  const [isHost,       setIsHost      ] = useState(false);
+  const [pregamePlayers, setPregamePlayers] = useState([]);
+  const [hostName,     setHostName    ] = useState('');
+  const [lobbyCount,   setLobbyCount  ] = useState(0);
 
-  const [myObject,   setMyObject  ] = useState(null);
-  const [myCode,     setMyCode    ] = useState('');
-  const [oppLabel,   setOppLabel  ] = useState('');
-  const [oppMatched, setOppMatched] = useState(false);
-  const [myMatched,  setMyMatched ] = useState(false);
-  const [codeInput,  setCodeInput ] = useState('');
-  const [timeLeft,   setTimeLeft  ] = useState(120);
-  const [gameOn,     setGameOn    ] = useState(false);
-  const [round,      setRound     ] = useState(0);
+  const [myObject,     setMyObject    ] = useState(null);
+  const [myCode,       setMyCode      ] = useState('');
+  const [oppLabel,     setOppLabel    ] = useState('');
+  const [oppMatched,   setOppMatched  ] = useState(false);
+  const [myMatched,    setMyMatched   ] = useState(false);
+  const [codeInput,    setCodeInput   ] = useState('');
+  const [timeLeft,     setTimeLeft    ] = useState(120);
+  const [gameOn,       setGameOn      ] = useState(false);
+  const [round,        setRound       ] = useState(0);
 
-  const [result,     setResult    ] = useState(null);
-  const [revealed,      setRevealed     ] = useState(false);
-  const [attemptsLeft,  setAttemptsLeft ] = useState(3);
-  const [fb,         setFb        ] = useState({ msg:'', type:'' });
-  const [errMsg,     setErrMsg    ] = useState('');
+  const [result,       setResult      ] = useState(null);
+  const [revealed,     setRevealed    ] = useState(false);
+  const [attemptsLeft, setAttemptsLeft] = useState(3);
+  const [fb,           setFb          ] = useState({ msg:'', type:'' });
+  const [errMsg,       setErrMsg      ] = useState('');
 
   const wsRef    = useRef(null);
   const countRef = useRef(null);
 
-  // ── WebSocket connection ───────────────────────────────────────────────────
   useEffect(() => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws    = new WebSocket(`${proto}://${location.host}`);
     wsRef.current = ws;
-
-    ws.onopen  = () => console.log('🔌 connected');
-    ws.onclose = () => {
-      setPhase(p => (p === 'home' ? 'home' : 'error'));
-      setErrMsg('Connection lost. Please refresh.');
-    };
-    ws.onerror = () => {
-      setPhase('error');
-      setErrMsg('Could not connect to server. Please refresh.');
-    };
+    ws.onopen  = () => console.log('connected');
+    ws.onclose = () => { setPhase(p => p === 'home' ? 'home' : 'error'); setErrMsg('Connection lost. Please refresh.'); };
+    ws.onerror = () => { setPhase('error'); setErrMsg('Could not connect. Please refresh.'); };
     ws.onmessage = (e) => handle(JSON.parse(e.data));
-
     return () => ws.close();
   }, []);
 
-  // ── server message handler ─────────────────────────────────────────────────
   function handle(msg) {
     switch (msg.type) {
 
       case 'joined':
         setMyLabel(msg.playerLabel);
-        setLobbyCount(msg.lobbyCount);
-        setPhase('lobby');
+        setIsHost(msg.isHost || false);
+        setPhase('pregame');
         setFb({ msg:'', type:'' });
+        break;
+
+      case 'pregame_update':
+        setPregamePlayers(msg.players || []);
+        setIsHost(msg.isHost || false);
+        setHostName(msg.hostName || '');
+        break;
+
+      case 'game_starting':
+        setFb({ msg:'🚀 Game is starting!', type:'success' });
+        setPhase('lobby');
         break;
 
       case 'lobby_update':
@@ -135,32 +143,27 @@ function App() {
         setTimeLeft(msg.timeLimit);
         setGameOn(true);
         setRound(r => r + 1);
-        setFb({ msg:'🎮 Game started! Walk around and find your mate!', type:'' });
+        setFb({ msg:'🎮 Game started! Find your mate!', type:'' });
         setPhase('playing');
         break;
 
       case 'verify_fail':
         setAttemptsLeft(msg.attemptsLeft);
-        if (msg.attemptsLeft === 0) {
-          setFb({ msg:'💀 No attempts left! Wait for the round to end.', type:'error' });
-        } else if (msg.reason === 'wrong_code') {
-          setFb({ msg:`❌ Wrong code! ${msg.attemptsLeft} attempt${msg.attemptsLeft !== 1 ? 's' : ''} left.`, type:'error' });
-        } else if (msg.reason === 'opp_matched') {
-          setFb({ msg:`❌ That person already matched! ${msg.attemptsLeft} attempt${msg.attemptsLeft !== 1 ? 's' : ''} left.`, type:'error' });
-        } else if (msg.reason === 'wrong_object') {
-          setFb({ msg:`❌ Not your match! Keep looking. ${msg.attemptsLeft} attempt${msg.attemptsLeft !== 1 ? 's' : ''} left.`, type:'error' });
-        }
+        if (msg.attemptsLeft === 0)          setFb({ msg:'💀 No attempts left!', type:'error' });
+        else if (msg.reason === 'wrong_code') setFb({ msg:`❌ Wrong code! ${msg.attemptsLeft} left.`, type:'error' });
+        else if (msg.reason === 'opp_matched')setFb({ msg:`❌ Already matched! ${msg.attemptsLeft} left.`, type:'error' });
+        else if (msg.reason === 'wrong_object')setFb({ msg:`❌ Not your match! ${msg.attemptsLeft} left.`, type:'error' });
         setCodeInput('');
         break;
 
       case 'no_attempts':
-        setFb({ msg:'💀 No attempts left! Wait for the round to end.', type:'error' });
+        setFb({ msg:'💀 No attempts left!', type:'error' });
         break;
 
       case 'verify_ok':
         setMyMatched(true);
         setGameOn(false);
-        setFb({ msg:`✅ MATCH FOUND! Opening your surprise...`, type:'success' });
+        setFb({ msg:'✅ MATCH FOUND! Opening your surprise...', type:'success' });
         break;
 
       case 'opp_matched':
@@ -171,32 +174,28 @@ function App() {
         setGameOn(false);
         clearInterval(countRef.current);
         setRevealed(false);
-        setResult({
-          matched:   msg.matched,
-          gift:      msg.gift || null,
-          myObject:  msg.myObject,
-          oppObject: msg.oppObject,
-        });
+        setResult({ matched:msg.matched, gift:msg.gift||null, myObject:msg.myObject, oppObject:msg.oppObject });
         setPhase('result');
+        break;
+
+      case 'start_error':
+        setFb({ msg:`⚠️ ${msg.reason}`, type:'error' });
         break;
 
       case 'room_full':
         setPhase('error');
-        setErrMsg(`The room is full (max ${msg.max} players). Please try again later.`);
+        setErrMsg(`Room is full (max ${msg.max}). Try again later.`);
         break;
 
       case 'opp_left':
         setGameOn(false);
         clearInterval(countRef.current);
-        setFb({ msg:'⚠️ Opponent disconnected. Going back to lobby...', type:'error' });
-        setTimeout(() => {
-          push({ type:'play_again' });
-        }, 2500);
+        setFb({ msg:'⚠️ Opponent disconnected. Going back...', type:'error' });
+        setTimeout(() => push({ type:'play_again' }), 2500);
         break;
     }
   }
 
-  // ── countdown ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!gameOn || phase !== 'playing') return;
     countRef.current = setInterval(() => {
@@ -205,7 +204,6 @@ function App() {
     return () => clearInterval(countRef.current);
   }, [gameOn, phase]);
 
-  // ── helpers ───────────────────────────────────────────────────────────────
   function push(data) {
     if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(data));
   }
@@ -215,37 +213,30 @@ function App() {
     push({ type:'join', name: nameInput.trim() });
   }
 
-  function verify() {
-    if (!codeInput || codeInput.length !== 6) {
-      setFb({ msg:'❌ Enter a valid 6-digit code!', type:'error' }); return;
-    }
+  function startGame() { push({ type:'admin_start' }); }
+  function verify()    {
+    if (!codeInput || codeInput.length !== 6) { setFb({ msg:'❌ Enter a valid 6-digit code!', type:'error' }); return; }
     push({ type:'verify', code: codeInput });
   }
-
   function playAgain() { push({ type:'play_again' }); }
   function goHome()    { location.reload(); }
 
-  // ── screens ───────────────────────────────────────────────────────────────
-
-  // ERROR
+  // ── ERROR ─────────────────────────────────────────────────────────────────
   if (phase === 'error') return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
         <div className="text-5xl mb-4">🔌</div>
         <h2 className="text-xl font-black text-gray-800 mb-2">Connection Lost</h2>
         <p className="text-gray-500 text-sm mb-6">{errMsg}</p>
-        <button onClick={goHome} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl">
-          Refresh & Reconnect
-        </button>
+        <button onClick={goHome} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl">Refresh & Reconnect</button>
       </div>
     </div>
   );
 
-  // HOME
+  // ── HOME ──────────────────────────────────────────────────────────────────
   if (phase === 'home') return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md fade">
-
         <div className="text-center mb-7">
           <div className="text-6xl mb-3">🎯</div>
           <h1 className="text-3xl font-black text-gray-800">Find Your Mate</h1>
@@ -255,12 +246,12 @@ function App() {
         <div className="bg-indigo-50 rounded-2xl p-4 mb-6">
           <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">How it works</p>
           {[
-            'Everyone opens this link on their own phone',
-            'Enter your name and join the lobby',
+            'Everyone opens this link on their phone',
+            'Enter your name and join the waiting room',
+            'The host starts the game when everyone is ready',
             'You\'ll be secretly paired with someone',
-            'Each of you gets a secret object — only you can see yours',
-            'Walk around, talk to people, find who has your matching object',
-            'Ask for their 6-digit code to verify — first to match wins!',
+            'Walk around, find who has your matching object',
+            'Ask for their 6-digit code to verify — winner gets a prize!',
           ].map((s,i) => (
             <div key={i} className="flex gap-2 items-start mb-2 last:mb-0">
               <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-200 text-indigo-700 text-xs font-bold flex items-center justify-center mt-0.5">{i+1}</span>
@@ -281,59 +272,116 @@ function App() {
         />
         {fb.type === 'error' && <p className="text-red-500 text-sm mb-3">{fb.msg}</p>}
 
-        <button
-          onClick={joinLobby}
-          className="w-full bg-gradient-to-r from-indigo-600 to-purple-500 text-white font-black text-lg py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg"
-        >
+        <button onClick={joinLobby}
+          className="w-full bg-gradient-to-r from-indigo-600 to-purple-500 text-white font-black text-lg py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg">
           JOIN THE ROOM →
         </button>
       </div>
     </div>
   );
 
-  // LOBBY
-  if (phase === 'lobby') return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-700 via-purple-700 to-indigo-700 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md fade">
-
-        <div className="text-center mb-6">
-          <div className="text-5xl mb-3">🏠</div>
-          <h2 className="text-2xl font-black text-gray-800">You're in the Lobby</h2>
-          <p className="text-gray-400 text-sm mt-1">Waiting to be matched with someone...</p>
+  // ── PRE-GAME LOBBY ────────────────────────────────────────────────────────
+  if (phase === 'pregame') return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-700 via-purple-700 to-blue-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md fade overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pt-6 pb-5 text-center">
+          <div className="text-4xl mb-2">🏠</div>
+          <h2 className="text-2xl font-black text-white">Waiting Room</h2>
+          <p className="text-indigo-200 text-sm mt-1">
+            {isHost ? '👑 You are the host — start when everyone is ready' : `Waiting for ${hostName || 'the host'} to start...`}
+          </p>
         </div>
 
-        {/* Player's own label */}
-        <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 mb-5 text-center">
-          <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">You are</p>
-          <p className="text-3xl font-black text-indigo-600">{myLabel}</p>
-          <p className="text-gray-400 text-xs mt-1">(your identity is hidden from others)</p>
-        </div>
+        <div className="p-6">
+          {/* Player count */}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest">
+              Players Joined ({pregamePlayers.length})
+            </p>
+            {pregamePlayers.length < 2 && (
+              <span className="text-xs text-amber-500 font-semibold">Need at least 2</span>
+            )}
+          </div>
 
-        {/* Live player count */}
-        <div className="bg-gray-50 rounded-2xl p-4 mb-5 text-center">
-          <p className="text-4xl font-black text-gray-800">{lobbyCount}</p>
-          <p className="text-gray-500 text-sm">{lobbyCount === 1 ? 'player waiting' : 'players in the lobby'}</p>
-          {lobbyCount < 2 && (
-            <p className="text-xs text-gray-400 mt-2">Waiting for at least 1 more player to join...</p>
+          {/* Player list */}
+          <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
+            {pregamePlayers.map((p, i) => (
+              <div key={i} className="flex items-center gap-3 bg-gray-50 rounded-2xl px-4 py-3 slide-in">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white font-black text-sm flex-shrink-0">
+                  {p.name[0].toUpperCase()}
+                </div>
+                <span className="font-bold text-gray-800">{p.name}</span>
+                {p.name === myLabel && <span className="text-xs text-indigo-400 font-semibold ml-auto">(you)</span>}
+                {p.name === hostName && <span className="text-xs text-yellow-500 font-bold ml-auto">👑 Host</span>}
+              </div>
+            ))}
+            {pregamePlayers.length === 0 && (
+              <p className="text-center text-gray-300 py-4 text-sm">Waiting for players...</p>
+            )}
+          </div>
+
+          {/* Animated dots */}
+          <div className="flex justify-center mb-5">
+            <div className="dot d1"/><div className="dot d2"/><div className="dot d3"/>
+          </div>
+
+          {/* Host: Start button | Others: waiting message */}
+          {isHost ? (
+            <div>
+              {fb.type === 'error' && <p className="text-red-500 text-sm text-center mb-3">{fb.msg}</p>}
+              <button
+                onClick={startGame}
+                disabled={pregamePlayers.length < 2}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-400 text-white font-black text-lg py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {pregamePlayers.length < 2 ? '⏳ Waiting for more players...' : `🚀 Start Game (${pregamePlayers.length} players)`}
+              </button>
+            </div>
+          ) : (
+            <div className="bg-indigo-50 rounded-2xl p-4 text-center">
+              <p className="text-indigo-600 font-semibold text-sm">
+                ⏳ Waiting for <strong>{hostName}</strong> to start the game...
+              </p>
+            </div>
           )}
-          {lobbyCount >= 2 && (
-            <p className="text-xs text-green-500 font-semibold mt-2">⚡ Finding your match now...</p>
-          )}
-        </div>
 
-        {/* Bounce dots */}
-        <div className="flex justify-center mb-5">
-          <div className="dot d1"/><div className="dot d2"/><div className="dot d3"/>
+          <p className="text-center text-gray-400 text-xs mt-4">
+            Share this page link with your team so everyone can join.
+          </p>
         </div>
-
-        <p className="text-center text-gray-400 text-xs">
-          Share this page with your team so everyone can join. You'll be auto-matched the moment someone is available.
-        </p>
       </div>
     </div>
   );
 
-  // PLAYING
+  // ── PAIRING LOBBY (game active, waiting to be paired) ─────────────────────
+  if (phase === 'lobby') return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-700 via-purple-700 to-indigo-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md fade">
+        <div className="text-center mb-6">
+          <div className="text-5xl mb-3">🔀</div>
+          <h2 className="text-2xl font-black text-gray-800">Finding Your Match</h2>
+          <p className="text-gray-400 text-sm mt-1">Hold tight — pairing you now...</p>
+        </div>
+
+        <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-4 mb-5 text-center">
+          <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">You are</p>
+          <p className="text-3xl font-black text-indigo-600">{myLabel}</p>
+        </div>
+
+        <div className="bg-gray-50 rounded-2xl p-4 mb-5 text-center">
+          <p className="text-4xl font-black text-gray-800">{lobbyCount}</p>
+          <p className="text-gray-500 text-sm">{lobbyCount === 1 ? 'player waiting' : 'players waiting to be paired'}</p>
+        </div>
+
+        <div className="flex justify-center mb-5">
+          <div className="dot d1"/><div className="dot d2"/><div className="dot d3"/>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── PLAYING ───────────────────────────────────────────────────────────────
   if (phase === 'playing' && myObject) {
     const critical = timeLeft <= 10;
     const low      = timeLeft <= 30;
@@ -341,7 +389,6 @@ function App() {
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-pink-500 p-4 pb-10">
         <div className="max-w-md mx-auto fade">
 
-          {/* Status bar */}
           <div className="bg-white/20 backdrop-blur rounded-2xl px-5 py-4 flex items-center justify-between mb-3">
             <div className="text-center">
               <p className="text-white/60 text-xs mb-0.5">{oppLabel}</p>
@@ -363,45 +410,34 @@ function App() {
             <span className="text-white/50 text-xs">Round {round}</span>
           </div>
 
-          {/* Secret object card */}
           <div className="bg-gradient-to-br from-blue-500 to-indigo-700 rounded-2xl p-6 mb-4 shadow-2xl">
             <p className="text-blue-200 text-xs font-bold uppercase tracking-widest text-center mb-5">🔒 Your Secret Object</p>
-
             <div className="text-center mb-5">
               <div className="text-8xl mb-2">{myObject.emoji}</div>
               <p className="text-white font-black text-2xl">{myObject.name}</p>
             </div>
-
-            {/* My code */}
             <div className="bg-white rounded-xl p-4 text-center mb-4">
-              <p className="text-gray-400 text-xs font-semibold mb-1">🆔 YOUR CODE — share this verbally</p>
+              <p className="text-gray-400 text-xs font-semibold mb-1">🆔 YOUR CODE — share verbally</p>
               <p className="text-gray-800 font-black text-3xl tracking-[0.5em] font-mono">{myCode}</p>
               <p className="text-indigo-500 text-xs mt-2 font-medium">👉 When someone finds you, tell them this code</p>
             </div>
-
           </div>
 
-          {/* Instruction — no hint about what to find */}
           {!myMatched && attemptsLeft > 0 && (
             <div className="bg-amber-50 border-l-4 border-amber-400 rounded-xl p-4 mb-4">
               <p className="text-amber-800 text-sm">
-                🤝 <strong>Walk around, talk to people</strong> and ask what object they have.
-                Figure out who matches with you — then ask for their 6-digit code!
+                🤝 <strong>Walk around, talk to people</strong> and figure out who matches with you — then ask for their 6-digit code!
               </p>
             </div>
           )}
 
-          {/* Code input */}
           <div className="bg-white rounded-2xl p-5 mb-4 shadow-lg">
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm font-bold text-gray-500">👤 Enter your mate's code:</label>
-              {/* Attempts hearts */}
               {!myMatched && (
                 <div className="flex items-center gap-1">
                   {[1,2,3].map(i => (
-                    <span key={i} className={`text-lg transition-all ${i <= attemptsLeft ? 'opacity-100' : 'opacity-20 grayscale'}`}>
-                      ❤️
-                    </span>
+                    <span key={i} className={`text-lg transition-all ${i <= attemptsLeft ? 'opacity-100' : 'opacity-20 grayscale'}`}>❤️</span>
                   ))}
                 </div>
               )}
@@ -417,40 +453,30 @@ function App() {
               disabled={myMatched || attemptsLeft === 0}
               className="w-full border-2 border-gray-200 focus:border-indigo-400 rounded-xl px-4 py-3 text-center text-2xl font-black tracking-[0.5em] font-mono outline-none transition-colors disabled:bg-gray-100 disabled:text-gray-400 mb-3"
             />
-            <button
-              onClick={verify}
-              disabled={myMatched || attemptsLeft === 0}
+            <button onClick={verify} disabled={myMatched || attemptsLeft === 0}
               className={`w-full font-black text-lg py-4 rounded-xl transition-all ${
-                myMatched
-                  ? 'bg-gray-100 text-gray-400 cursor-default'
-                  : attemptsLeft === 0
-                  ? 'bg-red-100 text-red-400 cursor-default'
-                  : 'bg-gradient-to-r from-green-500 to-emerald-400 text-white hover:opacity-90 active:scale-95 shadow-lg'
-              }`}
-            >
-              {myMatched ? '✓ MATCHED! Waiting for round to end...' : attemptsLeft === 0 ? '💀 No Attempts Left' : '✓ VERIFY MATCH'}
+                myMatched        ? 'bg-gray-100 text-gray-400 cursor-default' :
+                attemptsLeft===0 ? 'bg-red-100 text-red-400 cursor-default' :
+                                   'bg-gradient-to-r from-green-500 to-emerald-400 text-white hover:opacity-90 active:scale-95 shadow-lg'
+              }`}>
+              {myMatched ? '✓ MATCHED! Waiting...' : attemptsLeft===0 ? '💀 No Attempts Left' : '✓ VERIFY MATCH'}
             </button>
           </div>
 
-          {/* Feedback */}
           {fb.msg && (
             <div className={`rounded-xl p-4 text-center text-sm font-semibold fade ${
-              fb.type === 'success' ? 'bg-green-100 text-green-700' :
-              fb.type === 'error'   ? 'bg-red-100 text-red-600'    :
-                                      'bg-white/20 text-white'
-            }`}>
-              {fb.msg}
-            </div>
+              fb.type==='success' ? 'bg-green-100 text-green-700' :
+              fb.type==='error'   ? 'bg-red-100 text-red-600'    :
+                                    'bg-white/20 text-white'
+            }`}>{fb.msg}</div>
           )}
         </div>
       </div>
     );
   }
 
-  // RESULT
+  // ── RESULT ────────────────────────────────────────────────────────────────
   if (phase === 'result' && result) {
-
-    // ── Timeout — no match ───────────────────────────────────────────────────
     if (!result.matched) return (
       <div className="min-h-screen bg-gradient-to-br from-slate-600 via-gray-700 to-slate-800 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md fade text-center">
@@ -469,23 +495,16 @@ function App() {
             </div>
           </div>
           <div className="flex gap-3">
-            <button onClick={playAgain} className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-black py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg">
-              TRY AGAIN
-            </button>
-            <button onClick={goHome} className="flex-1 bg-gray-100 text-gray-500 font-bold py-4 rounded-xl hover:bg-gray-200 transition-colors">
-              HOME
-            </button>
+            <button onClick={playAgain} className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-black py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg">TRY AGAIN</button>
+            <button onClick={goHome}    className="flex-1 bg-gray-100 text-gray-500 font-bold py-4 rounded-xl hover:bg-gray-200 transition-colors">HOME</button>
           </div>
         </div>
       </div>
     );
 
-    // ── Matched — gift box reveal ─────────────────────────────────────────────
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md fade">
-
-          {/* Header */}
           <div className="text-center mb-6">
             <div className="text-5xl mb-2">🎉</div>
             <h2 className="text-3xl font-black text-gray-800">You Matched!</h2>
@@ -494,7 +513,6 @@ function App() {
             </p>
           </div>
 
-          {/* Matching pair */}
           <div className="bg-purple-50 rounded-2xl p-4 mb-6 flex items-center justify-around">
             <div className="text-center">
               <div className="text-4xl">{result.myObject?.emoji}</div>
@@ -509,18 +527,12 @@ function App() {
             </div>
           </div>
 
-          {/* Gift box */}
           <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border-2 border-yellow-200 rounded-2xl p-6 mb-6 text-center">
             <p className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-4">🎁 Your Surprise Gift</p>
-
             {!revealed ? (
-              <div
-                onClick={() => setRevealed(true)}
-                className="cursor-pointer select-none"
-              >
+              <div onClick={() => setRevealed(true)} className="cursor-pointer select-none">
                 <div className="text-8xl mb-3 shake inline-block">🎁</div>
                 <p className="text-gray-600 font-bold text-sm">Tap the box to reveal!</p>
-                <p className="text-gray-400 text-xs mt-1">What's inside? 👀</p>
               </div>
             ) : (
               <div className="pop">
@@ -532,12 +544,8 @@ function App() {
           </div>
 
           <div className="flex gap-3">
-            <button onClick={playAgain} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg">
-              PLAY AGAIN
-            </button>
-            <button onClick={goHome} className="flex-1 bg-gray-100 text-gray-500 font-bold py-4 rounded-xl hover:bg-gray-200 transition-colors">
-              HOME
-            </button>
+            <button onClick={playAgain} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg">PLAY AGAIN</button>
+            <button onClick={goHome}    className="flex-1 bg-gray-100 text-gray-500 font-bold py-4 rounded-xl hover:bg-gray-200 transition-colors">HOME</button>
           </div>
         </div>
       </div>

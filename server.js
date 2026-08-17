@@ -26,12 +26,11 @@ const PAIRS = [
   [{ emoji:'🎩', name:'Hat',        pair:'Wand'        }, { emoji:'🪄', name:'Wand',        pair:'Hat'        }],
 ];
 
-// ── Surprise gifts (weighted) ─────────────────────────────────────────────────
 const GIFTS = [
-  { emoji:'📦', label:'Empty Box',   desc:'Better luck next time! 😅',       weight: 3 },
-  { emoji:'💰', label:'₹10 Cash',    desc:'Collect from HR!',                weight: 3 },
-  { emoji:'💵', label:'₹20 Cash',    desc:'Collect from HR!',                weight: 2 },
-  { emoji:'🏖️', label:'1 Day Leave', desc:'Enjoy your well-deserved day off!', weight: 1 },
+  { emoji:'📦', label:'Empty Box',   desc:'Better luck next time! 😅',          weight: 3 },
+  { emoji:'💰', label:'₹10 Cash',    desc:'Collect from HR!',                   weight: 3 },
+  { emoji:'💵', label:'₹20 Cash',    desc:'Collect from HR!',                   weight: 2 },
+  { emoji:'🏖️', label:'1 Day Leave', desc:'Enjoy your well-deserved day off!',  weight: 1 },
 ];
 
 function pickGift() {
@@ -42,14 +41,28 @@ function pickGift() {
 }
 
 const MAX_PLAYERS = 100;
-
 const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
 let playerCounter = 0;
-const lobby = [];
-const active = new Set(); // all currently connected players
+
+// ── Game state ────────────────────────────────────────────────────────────────
+const waitingRoom = []; // players before game starts
+const lobby       = []; // players waiting to be paired (game in progress)
+const active      = new Set();
+let   hostPlayer  = null;
+let   gameActive  = false;
 
 function send(ws, data) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+
+function broadcastWaitingRoom() {
+  const players = waitingRoom.map(p => ({ name: p.realName || p.label }));
+  waitingRoom.forEach(p => send(p.ws, {
+    type:     'pregame_update',
+    players,
+    isHost:   p === hostPlayer,
+    hostName: hostPlayer ? (hostPlayer.realName || hostPlayer.label) : null,
+  }));
 }
 
 function broadcastLobby() {
@@ -75,28 +88,21 @@ function startGame(p1, p2) {
   p1.object = obj1; p1.code = genCode(); p1.opponent = p2; p1.matched = false; p1.attemptsLeft = 3;
   p2.object = obj2; p2.code = genCode(); p2.opponent = p1; p2.matched = false; p2.attemptsLeft = 3;
 
-  send(p1.ws, { type:'game_start', object:obj1, myCode:p1.code, oppLabel:p2.label, timeLimit:TIME_LIMIT });
-  send(p2.ws, { type:'game_start', object:obj2, myCode:p2.code, oppLabel:p1.label, timeLimit:TIME_LIMIT });
+  send(p1.ws, { type:'game_start', object:obj1, myCode:p1.code, oppLabel:p2.realName || p2.label, timeLimit:TIME_LIMIT });
+  send(p2.ws, { type:'game_start', object:obj2, myCode:p2.code, oppLabel:p1.realName || p1.label, timeLimit:TIME_LIMIT });
 
-  const timer = setTimeout(() => {
-    endGame(p1, p2, false); // timeout — no gifts
-  }, TIME_LIMIT * 1000);
-
+  const timer = setTimeout(() => endGame(p1, p2, false), TIME_LIMIT * 1000);
   p1.gameTimer = timer;
   p2.gameTimer = timer;
 
-  console.log(`[GAME] ${p1.label} vs ${p2.label} | ${obj1.name} ↔ ${obj2.name}`);
+  console.log(`[GAME] ${p1.realName} vs ${p2.realName} | ${obj1.name} ↔ ${obj2.name}`);
 }
 
 function endGame(p1, p2, matched) {
   clearTimeout(p1.gameTimer);
-
   if (matched) {
-    // Both players get independent random surprise gifts
     const gift1 = pickGift();
     const gift2 = pickGift();
-    console.log(`[GIFT] ${p1.label} → ${gift1.label} | ${p2.label} → ${gift2.label}`);
-
     send(p1.ws, { type:'game_end', matched:true,  gift:gift1, myObject:p1.object, oppObject:p2.object });
     send(p2.ws, { type:'game_end', matched:true,  gift:gift2, myObject:p2.object, oppObject:p1.object });
   } else {
@@ -128,17 +134,15 @@ wss.on('connection', (ws) => {
   const num = ++playerCounter;
   const player = {
     ws, num,
-    label:     `Player ${num}`,
-    realName:  null,
-    object:    null, code:      null,
-    matched:   false, opponent: null,
-    gameTimer: null,
+    label:       `Player ${num}`,
+    realName:    null,
+    object:      null, code:      null,
+    matched:     false, opponent: null,
+    gameTimer:   null,
   };
 
   active.add(player);
-  console.log(`[CONN] ${player.label} connected | total: ${active.size}`);
 
-  // Reject if room is full
   if (active.size > MAX_PLAYERS) {
     send(ws, { type:'room_full', max: MAX_PLAYERS });
     ws.close();
@@ -149,51 +153,75 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(String(raw));
 
+      // ── Join ────────────────────────────────────────────────────────────────
       if (msg.type === 'join') {
         player.realName = msg.name || player.label;
-        lobby.push(player);
-        send(ws, { type:'joined', playerLabel:player.label, lobbyCount:lobby.length });
-        broadcastLobby();
-        console.log(`[LOBBY] ${player.label} (${player.realName}) | ${lobby.length} waiting | total: ${active.size}`);
-        tryPair();
+
+        if (!gameActive) {
+          // Pre-game waiting room
+          waitingRoom.push(player);
+          if (!hostPlayer) hostPlayer = player;
+          send(ws, { type:'joined', playerLabel:player.realName, isHost: player === hostPlayer });
+          broadcastWaitingRoom();
+          console.log(`[WAITING] ${player.realName} | ${waitingRoom.length} waiting`);
+        } else {
+          // Game already running — join pairing queue
+          lobby.push(player);
+          send(ws, { type:'joined', playerLabel:player.realName, isHost:false, lobbyCount:lobby.length });
+          broadcastLobby();
+          tryPair();
+        }
       }
 
+      // ── Host starts the game ────────────────────────────────────────────────
+      if (msg.type === 'admin_start') {
+        if (player !== hostPlayer) return;
+        if (waitingRoom.length < 2) {
+          send(ws, { type:'start_error', reason:'Need at least 2 players to start.' });
+          return;
+        }
+        gameActive = true;
+        // Notify everyone game is starting
+        waitingRoom.forEach(p => send(p.ws, { type:'game_starting' }));
+        // Move all to pairing lobby
+        while (waitingRoom.length > 0) lobby.push(waitingRoom.shift());
+        hostPlayer = null;
+        tryPair();
+        console.log(`[START] Game started | ${lobby.length} players`);
+      }
+
+      // ── Verify match ────────────────────────────────────────────────────────
       if (msg.type === 'verify') {
         const opp = player.opponent;
         if (!opp || player.matched) return;
-
-        if (player.attemptsLeft <= 0) {
-          send(ws, { type:'no_attempts' }); return;
-        }
+        if (player.attemptsLeft <= 0) { send(ws, { type:'no_attempts' }); return; }
 
         if (msg.code !== opp.code) {
           player.attemptsLeft--;
-          send(ws, { type:'verify_fail', reason:'wrong_code', attemptsLeft: player.attemptsLeft }); return;
+          send(ws, { type:'verify_fail', reason:'wrong_code',   attemptsLeft:player.attemptsLeft }); return;
         }
         if (opp.matched) {
           player.attemptsLeft--;
-          send(ws, { type:'verify_fail', reason:'opp_matched', attemptsLeft: player.attemptsLeft }); return;
+          send(ws, { type:'verify_fail', reason:'opp_matched',  attemptsLeft:player.attemptsLeft }); return;
         }
         if (player.object.pair !== opp.object.name) {
           player.attemptsLeft--;
-          send(ws, { type:'verify_fail', reason:'wrong_object', attemptsLeft: player.attemptsLeft }); return;
+          send(ws, { type:'verify_fail', reason:'wrong_object', attemptsLeft:player.attemptsLeft }); return;
         }
 
         player.matched = true;
         send(ws,     { type:'verify_ok' });
         send(opp.ws, { type:'opp_matched' });
-
         setTimeout(() => endGame(player, opp, true), 3000);
       }
 
+      // ── Play again ──────────────────────────────────────────────────────────
       if (msg.type === 'play_again') {
-        player.object    = null; player.code      = null;
-        player.matched   = false; player.opponent  = null;
-        player.gameTimer = null;
+        player.object = null; player.code = null;
+        player.matched = false; player.opponent = null; player.gameTimer = null;
         lobby.push(player);
         send(ws, { type:'back_to_lobby', lobbyCount:lobby.length });
         broadcastLobby();
-        console.log(`[LOBBY] ${player.label} rejoined | ${lobby.length} waiting`);
         tryPair();
       }
 
@@ -202,14 +230,27 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     active.delete(player);
-    const i = lobby.indexOf(player);
-    if (i > -1) lobby.splice(i, 1);
+
+    // Remove from waiting room
+    const wi = waitingRoom.indexOf(player);
+    if (wi > -1) {
+      waitingRoom.splice(wi, 1);
+      if (player === hostPlayer) hostPlayer = waitingRoom[0] || null;
+      broadcastWaitingRoom();
+    }
+
+    // Remove from pairing lobby
+    const li = lobby.indexOf(player);
+    if (li > -1) lobby.splice(li, 1);
+
+    // Handle in-game opponent
     if (player.opponent) {
       clearTimeout(player.gameTimer);
       send(player.opponent.ws, { type:'opp_left' });
       player.opponent.opponent = null;
     }
-    console.log(`[GONE] ${player.label} | total: ${active.size}`);
+
+    console.log(`[GONE] ${player.realName || player.label} | total: ${active.size}`);
     broadcastLobby();
   });
 });
