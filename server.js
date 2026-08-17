@@ -4,7 +4,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 
 const DIR        = __dirname;
-const PORT       = 8765;
+const PORT       = process.env.PORT || 8765;
 const TIME_LIMIT = 120;
 
 const PAIRS = [
