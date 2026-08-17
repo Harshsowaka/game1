@@ -67,15 +67,33 @@ function App() {
   const wsRef    = useRef(null);
   const countRef = useRef(null);
 
-  useEffect(() => {
+  const reconnectTimerRef = useRef(null);
+
+  function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}`);
     wsRef.current = ws;
-    ws.onopen    = () => {};
-    ws.onclose   = () => { setPhase(p => p === 'home' ? 'home' : 'error'); setErrMsg('Connection lost. Please refresh.'); };
-    ws.onerror   = () => { setPhase('error'); setErrMsg('Could not connect. Please refresh.'); };
+    ws.onopen = () => {
+      clearTimeout(reconnectTimerRef.current);
+    };
+    ws.onclose = () => {
+      setPhase(p => {
+        if (p === 'home') return 'home';
+        // Mid-game disconnect — show reconnecting screen then reload
+        reconnectTimerRef.current = setTimeout(() => location.reload(), 4000);
+        return 'reconnecting';
+      });
+    };
+    ws.onerror = () => {};
     ws.onmessage = (e) => handle(JSON.parse(e.data));
-    return () => ws.close();
+  }
+
+  useEffect(() => {
+    connect();
+    return () => {
+      clearTimeout(reconnectTimerRef.current);
+      wsRef.current?.close();
+    };
   }, []);
 
   function handle(msg) {
@@ -219,6 +237,20 @@ function App() {
 
   function playAgain() { push({ type:'play_again' }); }
   function goHome()    { location.reload(); }
+
+  // ── RECONNECTING ──────────────────────────────────────────────────────────
+  if (phase === 'reconnecting') return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+        <div className="text-5xl mb-4">🔄</div>
+        <h2 className="text-xl font-black text-gray-800 mb-2">Connection dropped</h2>
+        <p className="text-gray-500 text-sm mb-6">Reconnecting you to the game...</p>
+        <div className="flex justify-center">
+          <div className="dot d1"/><div className="dot d2"/><div className="dot d3"/>
+        </div>
+      </div>
+    </div>
+  );
 
   // ── ERROR ─────────────────────────────────────────────────────────────────
   if (phase === 'error') return (

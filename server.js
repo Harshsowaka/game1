@@ -133,7 +133,21 @@ const server = http.createServer((req, res) => {
 // ── WebSocket server ──────────────────────────────────────────────────────────
 const wss = new WebSocketServer({ server });
 
+// Heartbeat — ping every 25s to keep connections alive through Render's proxy
+const heartbeat = setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (ws.isAlive === false) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 25000);
+
+wss.on('close', () => clearInterval(heartbeat));
+
 wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
   const num = ++playerCounter;
   const player = {
     ws, num,
