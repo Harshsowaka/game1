@@ -176,8 +176,8 @@ wss.on('connection', (ws) => {
       // ── Host starts the game ────────────────────────────────────────────────
       if (msg.type === 'admin_start') {
         if (player !== hostPlayer) return;
-        if (waitingRoom.length < 2) {
-          send(ws, { type:'start_error', reason:'Need at least 2 players to start.' });
+        if (waitingRoom.length < 2 || waitingRoom.length % 2 !== 0) {
+          send(ws, { type:'start_error', reason:`Need an even number of players to start (currently ${waitingRoom.length}).` });
           return;
         }
         gameActive = true;

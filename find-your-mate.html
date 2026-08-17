@@ -332,10 +332,14 @@ function App() {
               {fb.type === 'error' && <p className="text-red-500 text-sm text-center mb-3">{fb.msg}</p>}
               <button
                 onClick={startGame}
-                disabled={pregamePlayers.length < 2}
+                disabled={pregamePlayers.length < 2 || pregamePlayers.length % 2 !== 0}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-400 text-white font-black text-lg py-4 rounded-xl hover:opacity-90 active:scale-95 transition-all shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {pregamePlayers.length < 2 ? '⏳ Waiting for more players...' : `🚀 Start Game (${pregamePlayers.length} players)`}
+                {pregamePlayers.length < 2
+                  ? '⏳ Waiting for more players...'
+                  : pregamePlayers.length % 2 !== 0
+                  ? `⚠️ Need even number of players (${pregamePlayers.length} joined)`
+                  : `🚀 Start Game (${pregamePlayers.length} players)`}
               </button>
             </div>
           ) : (
