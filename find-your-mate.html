@@ -90,6 +90,12 @@ function App() {
 
   useEffect(() => {
     connect();
+    // Pre-fill join code if URL has ?join=CODE
+    const joinParam = new URLSearchParams(window.location.search).get('join');
+    if (joinParam) {
+      setHomeTab('join');
+      setCodeInput(joinParam.toUpperCase());
+    }
     return () => {
       clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
@@ -361,11 +367,25 @@ function App() {
           <div className="bg-indigo-50 border-2 border-indigo-100 rounded-2xl p-4 mb-5 text-center">
             <p className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-1">Room Code</p>
             <p className="text-4xl font-black text-indigo-700 tracking-[0.4em] mb-3">{roomCode}</p>
-            <button onClick={copyRoomCode}
-              className="text-xs font-bold px-4 py-2 rounded-xl transition-all"
-              style={{ background: codeCopied ? '#d1fae5' : '#e0e7ff', color: codeCopied ? '#065f46' : '#4338ca' }}>
-              {codeCopied ? '✓ Copied!' : '📋 Copy Code'}
-            </button>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <button onClick={copyRoomCode}
+                className="text-xs font-bold px-4 py-2 rounded-xl transition-all"
+                style={{ background: codeCopied ? '#d1fae5' : '#e0e7ff', color: codeCopied ? '#065f46' : '#4338ca' }}>
+                {codeCopied ? '✓ Copied!' : '📋 Copy Code'}
+              </button>
+              <button onClick={() => {
+                  const url = `${window.location.origin}/?join=${roomCode}`;
+                  if (navigator.share) {
+                    navigator.share({ title: 'Join my Find Your Mate game!', text: `Join my game with code ${roomCode}`, url });
+                  } else {
+                    navigator.clipboard.writeText(url).then(() => alert('Link copied to clipboard!'));
+                  }
+                }}
+                className="text-xs font-bold px-4 py-2 rounded-xl transition-all"
+                style={{ background: '#e0e7ff', color: '#4338ca' }}>
+                🔗 Share Link
+              </button>
+            </div>
           </div>
 
           {/* Players list */}
